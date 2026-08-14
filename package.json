@@ -1,0 +1,31 @@
+{
+  "name": "store-notes-pwa",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node index.js",
+    "build": "node index.js build",
+    "preview": "vite preview --host 0.0.0.0",
+    "setup:sql": "node index.js sql",
+    "setup:guide": "node index.js readme",
+    "stores:sql": "node index.js stores-sql",
+    "workflow:sql": "node index.js workflow-sql",
+    "notifications:sql": "node index.js notifications-sql",
+    "users:template": "node index.js users-template",
+    "provision:users": "node index.js provision-users"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.55.0",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "vite": "^8.2.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
