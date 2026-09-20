@@ -93,13 +93,15 @@ async function uploadThumb(path,file){
  try{const blob=await makeThumb(file);if(blob)await supabase.storage.from('store-findings').upload(thumbPathFor(path),blob,{contentType:'image/webp'})}catch{}
 }
 
+const COMPRESS={maxDim:800,maxKB:80,quality:.7,minQuality:.35};
 async function compressImage(file){
+ const {maxDim,maxKB,quality:startQuality,minQuality}=COMPRESS;
  if(!file.type.startsWith('image/')||file.size>15*1024*1024)throw new Error('Choose an image under 15 MB.');
- const bitmap=await createImageBitmap(file),scale=Math.min(1,1024/Math.max(bitmap.width,bitmap.height));
+ const bitmap=await createImageBitmap(file),scale=Math.min(1,maxDim/Math.max(bitmap.width,bitmap.height));
  const canvas=document.createElement('canvas');canvas.width=Math.round(bitmap.width*scale);canvas.height=Math.round(bitmap.height*scale);
  canvas.getContext('2d').drawImage(bitmap,0,0,canvas.width,canvas.height);bitmap.close();
- let quality=.78,blob=await new Promise(r=>canvas.toBlob(r,'image/webp',quality));
- while(blob&&blob.size>150*1024&&quality>.45){quality-=.08;blob=await new Promise(r=>canvas.toBlob(r,'image/webp',quality))}
+ let quality=startQuality,blob=await new Promise(r=>canvas.toBlob(r,'image/webp',quality));
+ while(blob&&blob.size>maxKB*1024&&quality>minQuality){quality-=.08;blob=await new Promise(r=>canvas.toBlob(r,'image/webp',quality))}
  if(!blob)throw new Error('Could not process this photo.');
  return new File([blob],file.name.replace(/\.[^.]+$/,'.webp'),{type:'image/webp'});
 }
