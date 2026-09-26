@@ -230,8 +230,14 @@ function Detail({finding,stores,cats,people,user,onBack,onStatus,onComment,onPho
 
 function Login(){const[loginId,setLoginId]=useState(''),[password,setPassword]=useState(''),[msg,setMsg]=useState('');async function login(e){e.preventDefault();setMsg('Signing in…');const value=loginId.trim();const email=value.includes('@')?value:value.toLowerCase()+'@accounts.storenotes.app';const{error}=await supabase.auth.signInWithPassword({email,password});setMsg(error?'Incorrect User ID or password.':'')}return <div className="login"><div className="loginBrand"><div className="logo">SN</div><h1>Store Notes Ver.2.0</h1><p>Retail visit findings, action tracking, and verification.</p></div><form onSubmit={login}><h2>Welcome back</h2><label>Store / User ID<input type="text" autoCapitalize="none" autoComplete="username" value={loginId} onChange={e=>setLoginId(e.target.value)} placeholder="Example: 105 or AM-SARAHG" required/></label><label>Password<input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/></label><button className="primary">Sign in</button>{msg&&<p className="formMsg">{msg}</p>}<small>Regional Managers may continue signing in with their email address.</small></form></div>}
 
+// Admin lives inside App, so any App re-render remounts it. Keep this panel's state
+// outside React so a scan survives the remount that its own toast triggers.
+const backfillStore={scan:null,progress:null,busy:'',stop:false};
+let adminTab='categories';
 function ThumbnailBackfill({notify}){
- const[scan,setScan]=useState(null),[busy,setBusy]=useState(''),[progress,setProgress]=useState(null),stopRef=useRef(false);
+ const[,render]=useState(0);
+ const set=patch=>{Object.assign(backfillStore,patch);render(n=>n+1)};
+ const{scan,progress,busy}=backfillStore;
  async function allPhotoPaths(){
   const out=[];
   for(const table of ['substandard_photos','finding_photos']){
@@ -244,27 +250,29 @@ function ThumbnailBackfill({notify}){
  async function missingThumbs(paths){
   const byDir=new Map(),missing=[];
   for(const path of paths){const cut=path.lastIndexOf('/');if(cut<0)continue;const dir=path.slice(0,cut);if(!byDir.has(dir))byDir.set(dir,[]);byDir.get(dir).push(path)}
+  let scanned=0;
   for(const[dir,list] of byDir){
    const{data:entries,error}=await supabase.storage.from('store-findings').list(dir,{limit:1000});
    if(error)throw error;
    const names=new Set((entries||[]).map(entry=>entry.name));
    for(const path of list){const name=path.slice(dir.length+1);if(!names.has(thumbPathFor(name)))missing.push(path)}
+   scanned++;set({progress:{done:scanned,total:byDir.size,made:0,failed:0,label:'folders checked'}});
   }
   return missing;
  }
  async function runScan(){
-  if(!supabase)return;setBusy('scan');setProgress(null);
-  try{const paths=await allPhotoPaths(),missing=await missingThumbs(paths);setScan({total:paths.length,missing});notify(missing.length?missing.length+' of '+paths.length+' photos still need a thumbnail.':'Every photo already has a thumbnail.')}
-  catch(error){notify(error.message||'The scan could not finish.',true);setScan(null)}
-  finally{setBusy('')}
+  if(!supabase)return;set({busy:'scan',progress:null});
+  try{const paths=await allPhotoPaths(),missing=await missingThumbs(paths);set({scan:{total:paths.length,missing},progress:null,busy:''});notify(missing.length?missing.length+' of '+paths.length+' photos still need a thumbnail.':'Every photo already has a thumbnail.')}
+  catch(error){set({scan:null,progress:null,busy:''});notify(error.message||'The scan could not finish.',true)}
  }
  async function runBackfill(limit){
-  if(!supabase||!scan||!scan.missing.length)return;
-  const queue=scan.missing.slice(0,limit===null?scan.missing.length:limit);
-  stopRef.current=false;setBusy('build');setProgress({done:0,made:0,failed:0,total:queue.length});
+  const current=backfillStore.scan;
+  if(!supabase||!current||!current.missing.length)return;
+  const queue=current.missing.slice(0,limit===null?current.missing.length:limit);
+  set({stop:false,busy:'build',progress:{done:0,made:0,failed:0,total:queue.length,label:'processed'}});
   let done=0,made=0,failed=0;
   for(const path of queue){
-   if(stopRef.current)break;
+   if(backfillStore.stop)break;
    try{
     const{data:blob,error}=await supabase.storage.from('store-findings').download(path);
     if(error||!blob)throw error||new Error('download failed');
@@ -274,12 +282,11 @@ function ThumbnailBackfill({notify}){
     if(uploadError)throw uploadError;
     made++;
    }catch{failed++}
-   done++;setProgress({done,made,failed,total:queue.length});
+   done++;set({progress:{done,made,failed,total:queue.length,label:'processed'}});
   }
-  setBusy('');
-  const processed=new Set(queue.slice(0,done));
-  setScan(current=>current?{...current,missing:current.missing.filter(path=>!processed.has(path))}:current);
-  notify(made+' thumbnail'+(made===1?'':'s')+' created'+(failed?', '+failed+' failed':'')+(stopRef.current?' (stopped early)':'')+'. Run the scan again to confirm.');
+  const processed=new Set(queue.slice(0,done)),stopped=backfillStore.stop;
+  set({busy:'',scan:{...current,missing:current.missing.filter(path=>!processed.has(path))}});
+  notify(made+' thumbnail'+(made===1?'':'s')+' created'+(failed?', '+failed+' failed':'')+(stopped?' (stopped early)':'')+'. Run the scan again to confirm.');
  }
  return <section className="panel settingsPanel"><h2>Thumbnail Backfill</h2>
   <p>Photos uploaded before thumbnails existed are still served at full size in every list, which is the main driver of monthly egress. This creates the missing <code>.t.webp</code> thumbnails one batch at a time. Nothing is deleted and photos that already have one are skipped, so it is safe to stop and resume.</p>
@@ -289,9 +296,9 @@ function ThumbnailBackfill({notify}){
    <button className="secondary" disabled={!!busy} onClick={()=>runBackfill(10)}>Build 10 (test run)</button>
    <button className="secondary" disabled={!!busy} onClick={()=>runBackfill(100)}>Build 100</button>
    <button className="primary" disabled={!!busy} onClick={()=>runBackfill(null)}>Build all {scan.missing.length}</button>
-   {busy==='build'&&<button className="secondary danger" onClick={()=>{stopRef.current=true}}>Stop</button>}
+   {busy==='build'&&<button className="secondary danger" onClick={()=>set({stop:true})}>Stop</button>}
   </div>}
-  {progress&&<div className="notice good"><CheckCircle2/><p>{progress.done} of {progress.total} processed · {progress.made} created{progress.failed?' · '+progress.failed+' failed':''}</p></div>}
+  {progress&&<div className="notice good"><CheckCircle2/><p>{progress.done} of {progress.total} {progress.label}{progress.label==='processed'?' · '+progress.made+' created'+(progress.failed?' · '+progress.failed+' failed':''):''}</p></div>}
  </section>;
 }
 function App(){
@@ -422,7 +429,7 @@ function FindingsPage({mode='all'}){
  }
 
 
-function Admin({kind}){const[tab,setTab]=useState('categories');if(kind==='users')return <main className="content"><div className="pageTitle"><div><span className="eyebrow">Regional Manager</span><h1>Users & Store Access</h1><p>Role and store assignments are enforced by database security.</p></div></div><section className="panel table"><div className="tableRow header"><span>Name</span><span>Role</span><span>Assigned stores</span><span>Active</span></div>{people.map(p=><div className="tableRow" key={p.id}><strong>{p.full_name}</strong><span>{roleName(p.role)}</span><span>{p.role==='regional_manager'?'All stores':access.filter(a=>a.user_id===p.id).length+' store(s)'}</span><span className="activeDot">● Active</span></div>)}<div className="notice"><AlertTriangle/><p>Authentication accounts are provisioned only through the trusted local admin workflow. Secret keys never enter this browser app.</p></div></section></main>;return <main className="content"><div className="pageTitle"><div><span className="eyebrow">Regional Manager</span><h1>Settings</h1><p>Manage finding categories, storage estimates, and setup resources.</p></div></div><div className="settingsTabs"><button className={tab==='categories'?'active':''} onClick={()=>setTab('categories')}>Categories</button><button className={tab==='storage'?'active':''} onClick={()=>setTab('storage')}>Storage</button><button className={tab==='setup'?'active':''} onClick={()=>setTab('setup')}>Setup</button></div>{tab==='categories'?<CategoryEditor cats={cats} onAdd={addCategory} onRename={renameCategory}/>:tab==='storage'?<><section className="panel settingsPanel"><h2>Admin Storage</h2><div className="storage"><HardDrive/><div><strong>Estimated usage</strong><span>Based on compressed uploaded photos</span></div></div><div className="notice good"><CheckCircle2/><p>Photos are resized to 800 pixels and compressed to about 80 KB of WebP before upload. A 320-pixel thumbnail is saved beside each one and used in every list.</p></div></section><ThumbnailBackfill notify={notify}/></>:<section className="panel settingsPanel"><h2>Supabase Setup</h2><p>Download the complete schema, Row Level Security, storage policies, indexes, and current store configuration.</p><div className="stack"><a className="secondary" href="/setup.sql" download><Download/> Download setup.sql</a><a className="secondary" href="/README.md" download><Download/> Download setup guide</a></div></section>}</main>}
+function Admin({kind}){const[tab,setTabState]=useState(adminTab),setTab=value=>{adminTab=value;setTabState(value)};if(kind==='users')return <main className="content"><div className="pageTitle"><div><span className="eyebrow">Regional Manager</span><h1>Users & Store Access</h1><p>Role and store assignments are enforced by database security.</p></div></div><section className="panel table"><div className="tableRow header"><span>Name</span><span>Role</span><span>Assigned stores</span><span>Active</span></div>{people.map(p=><div className="tableRow" key={p.id}><strong>{p.full_name}</strong><span>{roleName(p.role)}</span><span>{p.role==='regional_manager'?'All stores':access.filter(a=>a.user_id===p.id).length+' store(s)'}</span><span className="activeDot">● Active</span></div>)}<div className="notice"><AlertTriangle/><p>Authentication accounts are provisioned only through the trusted local admin workflow. Secret keys never enter this browser app.</p></div></section></main>;return <main className="content"><div className="pageTitle"><div><span className="eyebrow">Regional Manager</span><h1>Settings</h1><p>Manage finding categories, storage estimates, and setup resources.</p></div></div><div className="settingsTabs"><button className={tab==='categories'?'active':''} onClick={()=>setTab('categories')}>Categories</button><button className={tab==='storage'?'active':''} onClick={()=>setTab('storage')}>Storage</button><button className={tab==='setup'?'active':''} onClick={()=>setTab('setup')}>Setup</button></div>{tab==='categories'?<CategoryEditor cats={cats} onAdd={addCategory} onRename={renameCategory}/>:tab==='storage'?<><section className="panel settingsPanel"><h2>Admin Storage</h2><div className="storage"><HardDrive/><div><strong>Estimated usage</strong><span>Based on compressed uploaded photos</span></div></div><div className="notice good"><CheckCircle2/><p>Photos are resized to 800 pixels and compressed to about 80 KB of WebP before upload. A 320-pixel thumbnail is saved beside each one and used in every list.</p></div></section><ThumbnailBackfill notify={notify}/></>:<section className="panel settingsPanel"><h2>Supabase Setup</h2><p>Download the complete schema, Row Level Security, storage policies, indexes, and current store configuration.</p><div className="stack"><a className="secondary" href="/setup.sql" download><Download/> Download setup.sql</a><a className="secondary" href="/README.md" download><Download/> Download setup guide</a></div></section>}</main>}
  let body=page==='home'?<Dashboard/>:page==='stores'?<StoresPage/>:page==='findings'?<FindingsPage/>:page==='substandard'?<SubstandardPage rows={substandards} stores={storeLookup} user={user} ready={substandardReady} onAdd={()=>setAddSubstandard(true)} onOpen={setSelectedSubstandard}/>:page==='tasks'?<FindingsPage mode="tasks"/>:page==='verification'?<FindingsPage mode="verification"/>:page==='analytics'?<Analytics/>:page==='manual'?<Manual/>:page==='send-many'&&user.role==='regional_manager'?<SendManyPage stores={stores} cats={cats} people={people} access={access} onSend={sendManyFindings} notify={notify}/>:page==='notes-entry'&&user.role==='regional_manager'?<NotesEntryAccess/>:page==='users'?<Admin kind="users"/>:<Admin kind="settings"/>;
  const mobileItems=page==='substandard'?[['home','Home',Home],['stores','Stores',Store],['substandard','Substandard',AlertTriangle],['tasks','My Tasks',CheckCircle2],['more','More',MoreHorizontal]]:canCreateFinding?[['home','Home',Home],['stores','Stores',Store],['add','Add',Plus],['tasks','My Tasks',ClipboardList],['more','More',MoreHorizontal]]:[['home','Home',Home],['stores','Stores',Store],['findings','Findings',ClipboardList],['tasks','My Tasks',CheckCircle2],['more','More',MoreHorizontal]];
  return <div className="app"><Shell/>{body}{canCreateFinding&&page!=='substandard'&&<button className="fab" aria-label="Add finding" onClick={()=>setAdd(true)}><Plus/></button>}<nav className="mobileNav">{mobileItems.map(([id,label,I])=><button className={(page===id?'active ':'')+(id==='add'?'mobileAdd':'')} key={id} onClick={()=>id==='add'?setAdd(true):id==='more'?setSidebar(true):navigate(id)}><I/><span>{label}</span></button>)}</nav>{add&&canCreateFinding&&<AddFinding stores={entryStores} cats={cats} people={people} access={access} defaultStore={storeContext} onClose={()=>setAdd(false)} onSave={saveFinding} notify={notify}/>} {addSubstandard&&user.role==='regional_manager'&&<AddSubstandard stores={stores} onClose={()=>setAddSubstandard(false)} onSave={saveSubstandard} notify={notify}/>}<Toast toast={toast}/></div>
