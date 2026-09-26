@@ -203,9 +203,9 @@ async function exportNodeToPng(node,filename){
  clone.querySelectorAll('[data-export-hide]').forEach(el=>el.remove());
  clone.setAttribute('style','width:'+(width-40)+'px;margin:0;box-shadow:none');
  const markup=new XMLSerializer().serializeToString(clone);
- const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="padding:20px;background:#ffffff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif"><style>'+css+'</style>'+markup+'</div></foreignObject></svg>';
+ const svg='<svg xmlns="http://www.w3.org/2000/svg" width="'+width+'" height="'+height+'"><foreignObject x="0" y="0" width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml" style="padding:20px;background:#ffffff;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif"><style><![CDATA['+css.split(']]>').join(']]]]><![CDATA[>')+']]></style>'+markup+'</div></foreignObject></svg>';
  const image=new Image();
- await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('The picture could not be rendered.'));image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)});
+ await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=()=>reject(new Error('The picture could not be rendered on this browser.'));image.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg)});
  const scale=2,canvas=document.createElement('canvas');
  canvas.width=width*scale;canvas.height=height*scale;
  const context=canvas.getContext('2d');
