@@ -220,31 +220,31 @@ function CategoryKpiMatrix({rows,stores,pictureCounts}){
  return <section className="panel categoryMatrix">
   <div className="sectionHead"><div><span className="eyebrow">Store evaluation by BADS category</span><h2>Where Each Store Is Weak</h2></div>
    <div className="settingsTabs metricTabs"><button className={metric==='completion'?'active':''} onClick={()=>setMetric('completion')}>Completion KPI</button><button className={metric==='volume'?'active':''} onClick={()=>setMetric('volume')}>Finding volume</button></div></div>
-  <p className="hint">{metric==='completion'?'Pictures under Fixed / Done records \u00f7 total pictures, for each category. Weakest stores first.':'Total substandard pictures recorded in each category. Busiest stores first \u2014 high volume shows where problems keep happening, even when the store fixes them.'}</p>
+  <p className="hint">{metric==='completion'?'Pictures under Fixed / Done records ÷ total pictures, for each category. Weakest stores first.':'Total substandard pictures recorded in each category. Busiest stores first — high volume shows where problems keep happening, even when the store fixes them.'}</p>
   <div className="findingsTableWrap"><div className="matrixTable">
    <div className="matrixRow header"><span>Store</span>{SUBSTANDARD_CATEGORIES.map(([value,label])=><span key={value}>{label}</span>)}<span>Overall</span><span>Weakest area</span></div>
    {ordered.map(store=><div className="matrixRow" key={store.id}>
-    <span><strong>{store.store_name}</strong><small>{store.store_code} \u00b7 {store.area}</small></span>
+    <span><strong>{store.store_name}</strong><small>{store.store_code} · {store.area}</small></span>
     {SUBSTANDARD_CATEGORIES.map(([value,label])=>{const cell=store.cells[value];
      const tone=metric==='completion'?kpiBand(cell.score):(cell.pictures===0?'none':cell.pictures>=maxPictures*0.5?'weak':cell.pictures>=maxPictures*0.2?'good':'excellent');
-     return <span className={'matrixCell '+tone} key={value} title={label+' \u2014 '+cell.records+' record(s), '+cell.pictures+' picture(s)'}>
-      {cell.pictures===0?<em>\u2014</em>:metric==='completion'?<><b>{cell.score}%</b><small>{cell.done}/{cell.pictures}</small></>:<><b>{cell.pictures}</b><small>{cell.records} rec</small></>}</span>})}
-    <span className={'matrixCell '+kpiBand(store.score)}><b>{store.score===null?'\u2014':store.score+'%'}</b><small>{store.donePictures}/{store.pictures}</small></span>
-    <span className="matrixWeak">{metric==='completion'?(store.weakest?<><strong>{store.weakest[1]}</strong><small>{store.cells[store.weakest[0]].score}% \u00b7 {kpiBandName(store.cells[store.weakest[0]].score)}</small></>:<em>\u2014</em>):(store.heaviest?<><strong>{store.heaviest[1]}</strong><small>{store.cells[store.heaviest[0]].pictures} pictures</small></>:<em>\u2014</em>)}</span>
+     return <span className={'matrixCell '+tone} key={value} title={label+' — '+cell.records+' record(s), '+cell.pictures+' picture(s)'}>
+      {cell.pictures===0?<em>—</em>:metric==='completion'?<><b>{cell.score}%</b><small>{cell.done}/{cell.pictures}</small></>:<><b>{cell.pictures}</b><small>{cell.records} rec</small></>}</span>})}
+    <span className={'matrixCell '+kpiBand(store.score)}><b>{store.score===null?'—':store.score+'%'}</b><small>{store.donePictures}/{store.pictures}</small></span>
+    <span className="matrixWeak">{metric==='completion'?(store.weakest?<><strong>{store.weakest[1]}</strong><small>{store.cells[store.weakest[0]].score}% · {kpiBandName(store.cells[store.weakest[0]].score)}</small></>:<em>—</em>):(store.heaviest?<><strong>{store.heaviest[1]}</strong><small>{store.cells[store.heaviest[0]].pictures} pictures</small></>:<em>—</em>)}</span>
    </div>)}
   </div></div>
   <div className="matrixCharts">
-   <div className="chartBlock"><h3>{metric==='completion'?'Completion KPI by category \u2014 all stores':'Pictures recorded by category \u2014 all stores'}</h3>
+   <div className="chartBlock"><h3>{metric==='completion'?'Completion KPI by category — all stores':'Pictures recorded by category — all stores'}</h3>
     {totals.map(total=><div className="barRow" key={total.value}>
      <span className="barLabel">{total.label}</span>
      <span className="barTrack"><span className={'barFill '+(metric==='completion'?kpiBand(total.score):'volume')} style={{width:(metric==='completion'?(total.score||0):Math.round(total.pictures/maxPictures*100))+'%'}}></span></span>
-     <span className="barValue">{metric==='completion'?(total.score===null?'\u2014':total.score+'%'):total.pictures}<small>{metric==='completion'?total.done+'/'+total.pictures:'pictures'}</small></span>
+     <span className="barValue">{metric==='completion'?(total.score===null?'—':total.score+'%'):total.pictures}<small>{metric==='completion'?total.done+'/'+total.pictures:'pictures'}</small></span>
     </div>)}
    </div>
    <div className="chartBlock"><h3>Weakest store and category</h3>
     {hotspots.slice(0,6).map(spot=><div className="hotspotRow" key={spot.store+spot.label}>
      <span className={'hotspotDot '+kpiBand(spot.score)}></span>
-     <span><strong>{spot.store}</strong><small>{spot.label} \u00b7 {spot.done}/{spot.pictures} pictures fixed</small></span>
+     <span><strong>{spot.store}</strong><small>{spot.label} · {spot.done}/{spot.pictures} pictures fixed</small></span>
      <span className={'hotspotScore '+kpiBand(spot.score)}>{spot.score}%</span>
     </div>)}
     {!hotspots.length&&<p className="hint">No categories with pictures yet.</p>}
