@@ -206,6 +206,7 @@ const SUBSTANDARD_BACKLOG_WATCH=20,SUBSTANDARD_BACKLOG_ALERT=40;
 const visitLevel=count=>count>=SUBSTANDARD_VISIT_ALERT?'alert':count>=SUBSTANDARD_VISIT_WATCH?'watch':'';
 const backlogLevel=count=>count>=SUBSTANDARD_BACKLOG_ALERT?'alert':count>=SUBSTANDARD_BACKLOG_WATCH?'watch':'';
 const localDayKey=value=>{const d=new Date(value);return isNaN(d)?'':new Intl.DateTimeFormat('en-CA',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'Asia/Manila'}).format(d)};
+const countSubstandardDates=rows=>new Set((rows||[]).map(row=>localDayKey(row.created_at)).filter(Boolean)).size;
 const fmtTime=d=>d?new Intl.DateTimeFormat('en-PH',{hour:'numeric',minute:'2-digit',timeZone:'Asia/Manila'}).format(new Date(d)):'—';
 const substandardGroupKey=row=>[row.store_id,getSubstandardCategory(row),localDayKey(row.created_at)].join('|');
 // Same store + category + calendar day are one folder row, however many times it was saved and whatever the remarks
@@ -627,7 +628,7 @@ function SubstandardPage({rows,stores,user,ready,onAdd,onOpen,focus,people=[],ac
   donePictures=storeRows.filter(row=>row.status==='DONE').reduce((sum,row)=>sum+(pictureCounts[row.id]||0),0);
   const openPictures=storeRows.filter(row=>row.status!=='DONE').reduce((sum,row)=>sum+(pictureCounts[row.id]||0),0);
   const groups=groupSubstandards(storeRows),doneGroups=groups.filter(group=>group.status==='DONE').length;
-  return {...store,cells,pictures,openPictures,records:groups.length,open:groups.length-doneGroups,done:doneGroups,score:pictures?Math.round(donePictures/pictures*100):null};
+  return {...store,cells,pictures,openPictures,records:countSubstandardDates(storeRows),open:groups.length-doneGroups,done:doneGroups,score:pictures?Math.round(donePictures/pictures*100):null};
  }).filter(store=>user.role==='store_manager'||store.records).sort((a,b)=>a.store_name.localeCompare(b.store_name));
  const storeSummary=<section className="panel storeSummaryPanel"><div className="sectionHead"><div><span className="eyebrow">Organized by store</span><h2>Store Summary</h2></div><small>Click a category number to see its pictures. Click a store to open it.</small></div>
  <div className="findingsTableWrap"><div className="summaryTable">
@@ -640,7 +641,7 @@ function SubstandardPage({rows,stores,user,ready,onAdd,onOpen,focus,people=[],ac
      {SUBSTANDARD_CATEGORIES.map(([value,label])=>{const cell=store.cells[value];
       return <span className="summaryCell" key={value}>
        {cell.pictures?<button onClick={()=>toggleStore(store.id)} title={label+': '+cell.pictures+' pictures in '+cell.records+' record(s)'}><b>{cell.pictures}</b><small>{cell.records} rec</small></button>:<em>—</em>}</span>})}
-     <span className="summaryCell total">{store.pictures?<button onClick={()=>toggleStore(store.id)}><b>{store.pictures}</b><small>{store.records} rec</small></button>:<em>—</em>}</span>
+     <span className="summaryCell total">{store.pictures?<button onClick={()=>toggleStore(store.id)} title={store.records+' compliance check'+(store.records===1?'':'s')}><b>{store.pictures}</b><small>{store.records} check{store.records===1?'':'s'}</small></button>:<em>—</em>}</span>
      <span className={'matrixCell '+kpiBand(store.score)}><b>{store.score===null?'—':store.score+'%'}</b><small>{store.open} open</small></span>
     </div>
     {isOpen&&<div className="summaryExpand">
@@ -977,7 +978,7 @@ function AreaManagerKra({rows:allRows,stores,people,access,user,counts}){
  const lines=stores.map(store=>{
   const storeRows=rows.filter(row=>row.store_id===store.id),manager=managerFor(store.id),cells={};
   for(const[value] of SUBSTANDARD_CATEGORIES)cells[value]=picturesOf(storeRows.filter(row=>getSubstandardCategory(row)===value));
-  const checks=new Set(storeRows.map(row=>localDayKey(row.created_at)+'|'+getSubstandardCategory(row))).size;
+  const checks=countSubstandardDates(storeRows);
   const pictures=picturesOf(storeRows),done=picturesOf(storeRows.filter(row=>row.status==='DONE'));
   const correction=pictures?Math.round(done/pictures*100):null;
   const ackOnTime=storeRows.filter(row=>row.acknowledged_at&&(new Date(row.acknowledged_at)-new Date(row.created_at))<=KRA_ACK_HOURS*3600000).length;
@@ -1037,7 +1038,7 @@ function AreaManagerKra({rows:allRows,stores,people,access,user,counts}){
     <div className="rangePick"><label>Dates</label><select value={range} onChange={event=>setRange(event.target.value)}>{DATE_RANGES.map(([value,label])=><option value={value} key={value}>{label}</option>)}</select></div>
     <button className="secondary exportPng" disabled={exporting} onClick={exportPng}><Download/> {exporting?'Saving…':'Export PNG'}</button>
    </div></div>
-  <p className="hint">Score = correction rate 60% + acknowledged within {KRA_ACK_HOURS} hours 20% + speed against a {KRA_FIX_TARGET_DAYS}-day target 20%. Only stores visited in this period and holding at least {KRA_MIN_PICTURES} pictures are scored, so an unvisited store neither helps nor hurts. Pictures are counted per BADS category.</p>
+  <p className="hint">Score = correction rate 60% + acknowledged within {KRA_ACK_HOURS} hours 20% + speed against a {KRA_FIX_TARGET_DAYS}-day target 20%. Only stores visited in this period and holding at least {KRA_MIN_PICTURES} pictures are scored, so an unvisited store neither helps nor hurts. Compliance checks count distinct store visit dates; pictures are counted per BADS category.</p>
   <div className="findingsTableWrap"><div className="kraTable">
    <div className="kraRow header"><span>Area Manager</span>{SUBSTANDARD_CATEGORIES.map(([value,label])=><span className="pendingNum" key={value}>{label}</span>)}<span className="pendingNum">Compliance Checks</span><span className="pendingNum">Correction</span><span className="pendingNum">Acknowledged by Area Manager</span><span className="pendingNum">KRA</span></div>
    {managers.map(bucket=>{
