@@ -1324,24 +1324,29 @@ function App(){
   if(!ids.length)throw new Error('Nothing to move for that date.');
   if(supabase){
    const photos=[];
-   for(let i=0;i<ids.length;i+=100){const{data,error}=await supabase.from('substandard_photos').select('id,storage_path').in('substandard_id',ids.slice(i,i+100));if(error)throw error;photos.push(...(data||[]))}
-   let moved=0,failed=0;
+   for(let i=0;i<ids.length;i+=100){const{data,error}=await supabase.from('substandard_photos').select('id,storage_path,purged_at').in('substandard_id',ids.slice(i,i+100));if(error)throw error;photos.push(...(data||[]))}
+   let moved=0,failed=0,firstError='';
    for(const photo of photos){
     const path=String(photo.storage_path||''),cut=path.indexOf('/');
     if(cut<0){failed++;continue}
     if(path.startsWith(targetStoreId+'/')){moved++;continue}
     const newPath=targetStoreId+path.slice(cut);
-    const{error:moveError}=await supabase.storage.from('store-findings').move(path,newPath);
-    if(moveError){failed++;continue}
+    // After the 7-day purge only the thumbnail survives, so a move succeeds if EITHER file moves.
+    let movedAny=false,lastError='';
+    if(!photo.purged_at){
+     const{error:moveError}=await supabase.storage.from('store-findings').move(path,newPath);
+     if(moveError)lastError=moveError.message||String(moveError);else movedAny=true;
+    }
     const{error:thumbError}=await supabase.storage.from('store-findings').move(thumbPathFor(path),thumbPathFor(newPath));
-    if(thumbError){/* an older picture may have no thumbnail; the photo itself has already moved */}
+    if(!thumbError)movedAny=true;else if(!lastError)lastError=thumbError.message||String(thumbError);
+    if(!movedAny){failed++;if(!firstError)firstError=lastError;continue}
     const{error:rowError}=await supabase.from('substandard_photos').update({storage_path:newPath}).eq('id',photo.id);
     if(rowError)throw rowError;
     signedCache.delete(path);signedCache.delete(thumbPathFor(path));
     moved++;
    }
    persistSignedCache();
-   if(failed)throw new Error(moved+' picture'+(moved===1?'':'s')+' moved, '+failed+' could not be moved. The records stay with the original store — run the move again to finish.');
+   if(failed){const hint=/policy|permission|denied|unauthor/i.test(firstError)?' This usually means the storage update policy has not been run yet — run the latest substandard SQL in Supabase, then try again.':'';throw new Error(moved+' picture'+(moved===1?'':'s')+' moved, '+failed+' could not be moved. The records stay with the original store.'+(firstError?' First error: '+firstError+'.':'')+hint)}
    const{error}=await supabase.from('substandard_findings').update({store_id:targetStoreId}).in('id',ids);
    if(error)throw error;
   }
